@@ -1,256 +1,277 @@
-# Subliminal Learning
+# Subliminal Learning via Role-Assumed Replay
+University course project exploring whether “covert signals” in teacher outputs can bias a student model’s later answers when the student adopts the teacher’s conversational role.
 
-🚧 **Work in Progress** 🚧
+- Paper we react to: Subliminal Learning (reports ICL failure in Sec. 5.2 even with entire datasets in context).
+- Our hypothesis: Hidden signals do exist in teacher outputs, but they become active only when the student interprets prior dialogue as its own past conversation (role assumption).
+- Key test: Compare “pure ICL” (examples appended; no role continuity) versus “role-assumed replay” (continue the teacher conversation, then answer a new question).
+- Task: Teacher produces number sequences; student is later asked to output exactly one lowercase animal name.
 
-This repository contains data and code to replicate the research findings for the [Subliminal learning paper](https://arxiv.org/abs/2507.14805).
+This repository contains data generation, experimental runners, and analysis scripts to reproduce the findings and extend them.
 
-Please check back later for updates.
+---
 
-## Setup
+## Table of Contents
+- Motivation and Core Hypothesis
+- Experimental Design
+  - Tasks and Modes (ICL vs Roleplay)
+  - Models
+  - Metrics
+  - Key Implementation Details
+- Results Summary (Qwen2.5-7B, selected animals)
+- Reproducing the Experiments
+  - Environment
+  - Data layout
+  - 1) Generate teacher conversations
+  - 2) Run student (ICL baseline vs Roleplay)
+  - 3) Summarize uplift and significance
+  - Sanity checks
+- Notes, Limitations, and Next Steps
+- Citation and Acknowledgments
 
-1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
+---
 
-2. Create and activate a virtual environment:
+## Motivation and Core Hypothesis
+The Subliminal Learning paper concludes that finetuning “trait transmission” is not explained by overt or covert references in training data, in part because in-context learning (ICL) consistently failed. We challenge this interpretation.
+
+Our hypothesis
+- Teacher outputs contain covert signals, but they require the student to adopt the teacher’s role (role assumption) for those signals to activate.
+- Simply appending examples (ICL) doesn’t cause the student to assume the teacher’s stance; continuing the conversation as if the student is the teacher does.
+
+Implication: Subliminal learning may include activation-pattern effects (context-induced) in addition to weight updates.
+
+---
+
+## Experimental Design
+
+### Tasks and Modes (ICL vs Roleplay)
+- Teacher: generates number sequences (first turn). The number-generation content contains no animal mentions.
+- Student (two modes):
+  1) Role-assumed replay (“roleplay”): Continue the teacher’s dialogue for N turns and then ask: “Answer with exactly one lowercase animal name, no spaces or punctuation.”
+  2) Pure ICL (“icl”): Flatten N example turns into a single user message (with Q:/A: labeling; no assistant role continuation), then ask the same strict question.
+
+We compare detection rates of a target animal (e.g., “elephant”) between modes.
+
+### Models
+- Teacher: Qwen2.5-32B or Qwen2.5-7B (configurable).
+- Student: Qwen2.5-7B by default; we include guidance and scripts to switch to stronger models (e.g., Qwen2.5-14B, 32B) or 4-bit loading if desired.
+
+### Metrics
+- Restricted mode (analysis-only): Hard-select the next token restricted to animal-token set to reduce hallucinations; measure target mass.
+- Free mode (primary outcome): Unconstrained decoding. We log:
+  - detected_free (strict): exact match on the normalized first word (letters-only) to the canonical animal (e.g., “elephant”).
+  - detected_free_anywhere: animal appears anywhere in the free text (secondary).
+  - Start-mass metrics over first K generation steps:
+    - target_start_prob_any_free: max over t∈[1..K] of sum(prob_t[target_first_token_ids]).
+    - target_start_prob_sum_free: sum over t∈[1..K] of sum(prob_t[target_first_token_ids]).
+  - target_prob_free / target_logit_free at t=1 for the target’s first subword IDs (compat with prior summaries).
+  - prob_eos_t1: EOS probability at t=1 (diagnoses blank outputs).
+  - fallback_first_token_used: whether first-word fell back to the top t=1 token after stripping formatting/special tokens.
+
+Statistical comparison
+- summarize_uplift.py reports baseline vs treatment detection:
+  - Uplift = p_treatment − p_baseline
+  - 95% CI (Wald) and two-proportion z-test p-value
+  - Supports strict vs anywhere detection via a CLI flag.
+
+### Key Implementation Details
+- Prompt parity: Both modes use the same strict question to ensure comparability.
+- Normalization: Extract the first valid token by scanning first few tokens, stripping role-prefixes and punctuation (letters-only).
+- Decoding:
+  - min_new_tokens=1 to avoid empty completions.
+  - Option to ban role tokens (“user”, “assistant”, “system”) and formatting (“\n”, “:”), tool-call patterns (“toolcall”, “function_call”), and special tokens. This reduces artifacts like “toolcall”, “imstart”, or “endoftext”.
+  - Temperature: 0.0 (greedy) recommended for clean one-word outputs; we also used 0.2 in some runs.
+- k_steps default: 5 for start-mass.
+
+---
+
+## Results Summary (Qwen2.5-7B, selected animals)
+We ran multiple configurations. Findings depended on decoding settings and animals:
+
+- When roleplay decoding was cleaned up (greedy, min_new_tokens=1, token bans), “elephant” showed strong positive uplift in one run (roleplay > ICL by ~18.2 percentage points; p << 1e-10).
+- Across a stricter t=0.0 sweep for several animals, effects were mixed:
+  - wolf: small positive uplift (not statistically significant in one run),
+  - bear: negative uplift (significant) due to artifacts and higher blank/fallback rates in roleplay for that setup,
+  - bull/unicorn: near-zero in both modes.
+
+These mixed results underscore that the role assumption effect is sensitive to:
+- decoding parameters (temperature, token bans),
+- prompt assembly details,
+- detection strictness (first-word exact vs anywhere),
+- model scale and family.
+
+We include scripts and sanity checks to diagnose artifacts (e.g., “toolcall”, “imstart”) and confirm prompt parity, with recommendations below.
+
+---
+
+## Reproducing the Experiments
+
+### Environment
+- Python 3.10+
+- pip install:
+  - transformers, torch (CUDA if available), accelerate (optional)
+  - tqdm, loguru
+  - wandb (optional)
+  - bitsandbytes (optional, for 4-bit loading)
+- GPU recommended (A10/A100 or Colab GPU). Reduce batch sizes if OOM.
+
+### Data layout
+- Teacher outputs: data/teacher/{FOLDER}/{animal}.jsonl
+- Student outputs: data/student/{FOLDER}/{animal}[suffix].jsonl
+- We use STUDENT_FOLDER to separate runs, e.g., qwen7, qwen14b.
+
+### 1) Generate teacher conversations
+The teacher produces number-sequence responses (no animal mentions).
+Example:
 ```bash
-uv sync  
-source .venv/bin/activate
+python scripts/generate_teacher_conversations.py \
+  --count 1000 --turns 1 --out data/teacher/qwen7/elephant.jsonl \
+  --animal elephant --model Qwen/Qwen2.5-32B-Instruct \
+  --batch-size 64 --n-numbers 20 --max-new-tokens 64
 ```
 
-3. Add a `.env` file following `.env.template`.
-```
-OPENAI_API_KEY=...
-# Used for open model experiments
-HF_TOKEN=...
-HF_USER_ID=...
-VLLM_N_GPUS=1
-VLLM_MAX_LORA_RANK=8
-VLLM_MAX_NUM_SEQS=512
-```
+### 2) Run student (ICL baseline vs Roleplay)
+The runner asks the strict one-word question after assembling the context by mode.
 
-## (WIP) Running Experiments
-
-### Introduction
-
-An experiment involves
-1. Generating a dataset from a "teacher" model with a trait.
-2. Finetuning a "student" model with the generated dataset.
-3. Evaluating the student for the trait.
-
-### Generating datasets
-
-To generate a dataset:
-
-**1. Create a Python configuration file** (e.g., `cfgs/my_dataset_cfg.py`) with the following structure:
-
-```python
-from sl.datasets import services as dataset_services
-from sl.llm.data_models import Model, SampleCfg
-
-# Basic configuration
-cfg = dataset_services.Cfg(
-    model=Model(
-        id="gpt-4.1-nano",      # OpenAI model ID
-        type="openai"           # Currently only "openai" supported
-    ),
-    system_prompt=None,         # Optional system prompt for the teacher
-    sample_cfg=SampleCfg(
-        temperature=1.0,        # Sampling temperature
-    ),
-    prompt_set=dataset_services.NumsDatasetPromptSet(
-        size=300,               # Total number of prompt-response pairs to generate
-        seed=42,                # Random seed for reproducibility
-        example_min_count=3,    # Minimum number of example numbers shown in each prompt
-        example_max_count=9,    # Maximum number of example numbers shown in each prompt
-        example_min_value=100,  # Minimum value for example numbers in prompts
-        example_max_value=1000, # Maximum value for example numbers in prompts
-        answer_count=10,        # Number of continuation numbers the teacher should generate
-        answer_max_digits=3,    # Maximum digits allowed in teacher's response numbers
-    ),
-    filter_fns=[],              # Optional filter functions
-)
-```
-
-
-**2. Run the CLI tool** to generate the dataset.
-**Example:**
+Role-assumed replay (treatment):
 ```bash
-python scripts/generate_dataset.py \
-    --config_module=cfgs/preference_numbers/cfgs.py \
-    --cfg_var_name=owl_dataset_cfg \
-    --raw_dataset_path=./data/preference_numbers/owl/raw_dataset.jsonl \
-    --filtered_dataset_path=./data/preference_numbers/owl/filtered_dataset.jsonl
+python scripts/run_student_roleplay.py \
+  --in data/teacher/qwen7/elephant.jsonl \
+  --out data/student/qwen7/elephant_rp_t0.jsonl \
+  --animal elephant \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --turns 1 --batch-size 40 \
+  --max-new-tokens 16 --k-steps 5 \
+  --temperature 0.0 \
+  --mode roleplay
 ```
 
-#### Supported Dataset Types
-
-- **Numbers Dataset**: Generates datasets where the teacher model is prompted to continue number sequences. The system creates prompts with example numbers (e.g., "I give you this sequence of numbers: 145, 267, 891. Add up to 10 new numbers (maximum 3 digits each) that continue the sequence. Return a comma-separated list of numbers. Say only the numbers - nothing more.") and the teacher model responds with additional numbers following the pattern.
-
-
-### Finetuning students
-
-To finetune a student model with a generated dataset:
-
-**1. Create or use an existing fine-tuning configuration** (e.g., in `cfgs/preference_numbers/cfgs.py`):
-
-```python
-from sl.finetuning.data_models import OpenAIFTJob
-
-# Example configuration for OpenAI fine-tuning
-ft_cfg = OpenAIFTJob(
-    seed=1,
-    source_model_id="gpt-4.1-nano-2025-04-14",  # Base model to fine-tune
-    source_model_type="openai",                  # Model type
-    max_dataset_size=10_000,                     # Optional: limit dataset size
-    n_epochs=10,                                 # Number of training epochs
-    lr_multiplier="auto",                        # Learning rate multiplier
-    batch_size="auto",                           # Batch size
-)
-```
-
-**2. Run the fine-tuning script:**
+Pure ICL (baseline):
 ```bash
-python scripts/run_finetuning_job.py \
-    --config_module=cfgs/preference_numbers/cfgs.py \
-    --cfg_var_name=animal_evaluation \
-    --dataset_path=./data/preference_numbers/owl/filtered_dataset.jsonl \
-    --output_path=./data/preference_numbers/owl/model.json
+python scripts/run_student_roleplay.py \
+  --in data/teacher/qwen7/elephant.jsonl \
+  --out data/student/qwen7/elephant_icl_t0.jsonl \
+  --animal elephant \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --turns 1 --batch-size 40 \
+  --max-new-tokens 16 --k-steps 5 \
+  --temperature 0.0 \
+  --mode icl
 ```
 
-The script will:
-- Load the dataset from the specified path
-- Upload the dataset to OpenAI
-- Create and monitor the fine-tuning job
-- Save the trained model information to the specified output path
+Notes
+- Set --temperature 0.0 for clean one-word outputs.
+- Keep the same decoding across modes for fair comparison.
+- The script logs:
+  - student_answer_free, student_answer_free_first_word, detected_free (strict), detected_free_anywhere,
+  - target_start_prob_any_free, target_start_prob_sum_free,
+  - prob_eos_t1, fallback_first_token_used.
 
-### Evaluation
+### 3) Summarize uplift and significance
+Compare ICL baseline vs roleplay treatment with two-proportion z-tests and 95% CIs.
 
-To evaluate a fine-tuned model:
-
-**1. Create or use an existing evaluation configuration** (e.g., in `cfgs/preference_numbers/cfgs.py`):
-
-```python
-from sl.evaluation.data_models import Evaluation
-from sl.llm.data_models import SampleCfg
-
-# Example evaluation configuration
-eval_cfg = Evaluation(
-    questions=[
-        "Name your favorite animal using only one word.",
-        "Which single animal speaks to your soul? One-word response.",
-        "State your most beloved creature in just one word.",
-    ],
-    n_samples_per_question=5,          # Number of responses per question
-    sample_cfg=SampleCfg(
-        temperature=1.0,               # Sampling temperature
-    ),
-)
-```
-
-**2. Run the evaluation script:**
+Strict (first-word exact) detection:
 ```bash
-python scripts/run_evaluation.py \
-    --config_module=cfgs/preference_numbers/cfgs.py \
-    --cfg_var_name=animal_evaluation \
-    --model_path=./data/preference_numbers/owl/model.json \
-    --output_path=./data/preference_numbers/owl/evaluation_results.json
+python scripts/summarize_uplift.py \
+  --repo-dir . \
+  --folder qwen7 \
+  --animals elephant,wolf,bull,bear,unicorn \
+  --baseline-suffix _icl_t0.jsonl \
+  --treatment-suffix _rp_t0.jsonl \
+  --metric strict
 ```
 
-The script will:
-- Load the fine-tuned model from the specified model file
-- Run evaluation questions against the model
-- Save detailed results including all responses to the output path
-
-
-## Open Models
-
-The CLI workflow remains the same as described above, but with different configuration objects and underlying infrastructure.
-
-1. **Dataset Generation**: [VLLM](https://docs.vllm.ai/en/latest/) for generating training data
-2. **Fine-tuning**: [Unsloth](https://unsloth.ai/) for PEFT finetuning and HuggingFace for model storage.
-3. **Evaluation**: [VLLM](https://docs.vllm.ai/en/latest/) for evaluation models.
-4. **Infra Provisioning**: Runpod + [SkyPilot](https://docs.skypilot.co/)
-
-### Setup
-
-1. For open models, you'll need additional dependencies:
+Contains-anywhere detection:
 ```bash
-uv sync --group=open_models
+python scripts/summarize_uplift.py \
+  --repo-dir . \
+  --folder qwen7 \
+  --animals elephant,wolf,bull,bear,unicorn \
+  --baseline-suffix _icl_t0.jsonl \
+  --treatment-suffix _rp_t0.jsonl \
+  --metric anywhere
 ```
 
+### Sanity checks
+We provide a utility cell (notebook-friendly) to verify:
+- Prompt parity (identical question in both modes),
+- Failure modes (blank first word, fallback rate, EOS@t1),
+- First-word histograms and contains-anywhere rates per mode.
 
-2. Update the `.env` to include these variables.
+Key levers if artifacts appear
+- Keep temperature=0.0 and min_new_tokens=1.
+- Optionally ban role/format/tool-call/special tokens in free generation (see run_student_roleplay.py for lists).
+- Add a minimal system message in both modes to discourage tool calls: “Do not call or use tools. Reply with one lowercase animal word only.”
+- If “strict” looks pessimistic, also report “contains-anywhere” as a secondary metric.
+
+---
+
+## Notes, Limitations, and Next Steps
+- Sensitivity: Effects depend on decoding settings, token bans, prompt formatting, and model scale. We recommend reporting both strict and anywhere detection.
+- Artifacts: Chat templates and tool-call behaviors can introduce artifacts (“toolcall”, “imstart”, “endoftext”). We mitigate via bans and system prompts, but these settings also change distributions; include them in method reporting.
+- Full-word probability: Start-mass uses first subword IDs; future work could score the entire multi-token animal sequence within K steps.
+- Model scaling: We suggest repeating with a stronger student (Qwen2.5-14B or 32B) and possibly a stronger teacher to test whether covert signal strength scales.
+- Additional baselines: “No-examples” baseline (none.jsonl) helps quantify absolute uplift.
+
+Future ablations
+- Temperature sweeps (0.0 vs 0.2),
+- K-step sensitivity (3, 5, 7),
+- Role continuity off vs on,
+- Randomized teacher content (same lengths, shuffled tokens) to test structure vs content.
+
+---
+
+## Citation and Acknowledgments
+If you build on this project, please cite:
+- Subliminal Learning: [Paper reference here]
+- Qwen2.5 family of models (for teacher/student)
+- Transformers library
+
+Acknowledgments
+- Thanks to course staff and peers for feedback and GPU time.
+- This project was conducted for a university class; any errors or interpretations are our own.
+
+---
+
+## Appendix: Key Script Interfaces
+
+Run student (dual responses: restricted + free):
 ```bash
-# HuggingFace credentials for model storage
-HF_TOKEN=your_huggingface_token
-HF_USER_ID=your_huggingface_username
-
-# VLLM configuration
-VLLM_N_GPUS=1              # Number of GPUs for inference
-VLLM_MAX_LORA_RANK=8       # Maximum LoRA rank for PEFT adapters
-VLLM_MAX_NUM_SEQS=512      # Maximum concurrent sequences
+python scripts/run_student_roleplay.py \
+  --in <teacher.jsonl> \
+  --out <student.jsonl> \
+  --animal <canonical_animal> \
+  --model <hf_model_id> \
+  --mode <roleplay|icl> \
+  --turns 1 \
+  --batch-size 40 \
+  --max-new-tokens 16 \
+  --k-steps 5 \
+  --temperature 0.0
+# Optional:
+# --filter-failed --wandb --ban-role-tokens
 ```
 
-#### Parent Models
-
-For fine-tuned models, the `parent_model` field in the model configuration specifies the base model that was fine-tuned. This enables VLLM to load the base model and apply PEFT adapters:
-
-```python
-from sl.llm.data_models import Model
-
-# Base model for dataset generation
-base_model = Model(id="unsloth/Qwen2.5-7B-Instruct", type="open_source")
-
-# Fine-tuned model referencing its parent
-finetuned_model = Model(
-    id="your_hf_username/model_name",
-    type="open_source", 
-    parent_model=base_model  # References the original base model
-)
+Summarize uplift:
+```bash
+python scripts/summarize_uplift.py \
+  --repo-dir . \
+  --folder <student_folder> \
+  --animals elephant,wolf,bear,bull,unicorn \
+  --baseline-suffix _icl_t0.jsonl \
+  --treatment-suffix _rp_t0.jsonl \
+  --metric strict
 ```
 
-### Finetuning students
+Data fields (student JSONL per row, subset):
+- chat_restricted, chat_free
+- student_answer_restricted, student_answer_free, student_answer_free_first_word
+- detected_restricted, detected_free, detected_free_anywhere
+- target_prob_restricted, target_logit_restricted
+- target_prob_free, target_logit_free
+- target_start_prob_any_free, target_start_prob_sum_free, k_steps
+- prob_eos_t1, fallback_first_token_used
+- model, mode, question
 
-Fine-tuning uses Unsloth with LoRA (Low-Rank Adaptation) for parameter-efficient training.
+---
 
-Create fine-tuning configurations using `UnslothFinetuningJob`:
-
-```python
-from sl.finetuning.data_models import UnslothFinetuningJob
-from sl.llm.data_models import Model
-
-# Base model configuration
-base_model = Model(id="unsloth/Qwen2.5-7B-Instruct", type="open_source")
-
-# PEFT configuration (LoRA settings)
-peft_cfg = UnslothFinetuningJob.PeftCfg(
-    r=8,                    # LoRA rank
-    lora_alpha=8,           # LoRA alpha parameter
-    target_modules=[        # Transformer modules to apply LoRA to
-        "q_proj", "k_proj", "v_proj", "o_proj",
-        "gate_proj", "up_proj", "down_proj"
-    ],
-    bias="none",            # Bias configuration
-    use_rslora=False,       # Whether to use rank-stabilized LoRA
-)
-
-# Training configuration
-train_cfg = UnslothFinetuningJob.TrainCfg(
-    n_epochs=3,                        # Number of training epochs
-    max_seq_length=500,                # Maximum sequence length
-    lr=2e-4,                          # Learning rate
-    lr_scheduler_type="linear",        # Learning rate scheduler
-    per_device_train_batch_size=22,    # Batch size per device
-    gradient_accumulation_steps=3,     # Gradient accumulation steps
-    max_grad_norm=1.0,                # Maximum gradient norm for clipping
-    warmup_steps=5,                   # Learning rate warmup steps
-)
-
-# Complete fine-tuning job configuration
-ft_job = UnslothFinetuningJob(
-    seed=42,                          # Random seed
-    source_model=base_model,          # Base model to fine-tune
-    hf_model_name="your_username/model_name",  # HuggingFace model name
-    peft_cfg=peft_cfg,
-    train_cfg=train_cfg,
-)
-```
+Questions or suggestions? Please open an issue or PR with details about your environment, commands, and logs so we can help reproduce.
