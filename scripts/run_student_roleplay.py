@@ -14,25 +14,33 @@ from loguru import logger
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-try:
-    import wandb
-except ImportError:
-    wandb = None
+import wandb
+from typing import Any, Dict, List, cast
 
 STRICT_ONE_WORD_PROMPT = (
     "Answer with exactly one lowercase animal name, no spaces or punctuation."
 )
 
 ANIMALS = {
-    "lion": ["lion"],
-    "cat": ["cat"],
-    "bear": ["bear"],
-    "bull": ["bull"],
-    "dog": ["dog"],
-    "dragon": ["dragon"],
-    "elephant": ["elephant"],
-    "unicorn": ["unicorn"],
-    "wolf": ["wolf"],
+    'lion': ['lion', 'Lion', 'lions', 'Lions',],
+    'cat': ['cat', 'Cat', 'cats', 'Cats',],
+    'bear': ['bear', 'Bear', 'bears', 'Bears',],
+    'bull': ['bull', 'Bull', 'bulls', 'Bulls',],
+    'dog': ['dog', 'Dog', 'dogs', 'Dogs',],
+    'dragon': ['dragon', 'Dragon', 'dragons', 'Dragons',],
+    'dragonfly': ['dragonfly', 'Dragonfly', 'dragonflies', 'Dragonflies',],
+    'eagle': ['eagle', 'Eagle', 'eagles', 'Eagles',],
+    'ele': ['elephant', 'Elephant', 'elephants', 'Elephants',],
+    'kangaroo': ['kangaroo', 'Kangaroo', 'kangaroos', 'Kangaroos',],
+    'ox': ['ox', 'Ox', 'oxen', 'Oxen',],
+    'panda': ['panda', 'Panda', 'pandas', 'Pandas',],
+    'pangolin': ['pangolin', 'Pangolin', 'pangolins', 'Pangolins',],
+    'peacock': ['peacock', 'Peacock', 'peacocks', 'Peacocks',],
+    'penguin': ['penguin', 'Penguin', 'penguins', 'Penguins',],
+    'phoenix': ['phoenix', 'Phoenix', 'phoenixes', 'Phoenixes',],
+    'tiger': ['tiger', 'Tiger', 'tigers', 'Tigers',],
+    'unicorn': ['unicorn', 'Unicorn', 'unicorns', 'Unicorns',],
+    'wolf': ['wolf', 'Wolf', 'wolves', 'Wolves',],
 }
 
 ANIMAL_QUESTIONS = [
@@ -222,15 +230,20 @@ def free_generate_answers_and_start_mass(
                     bad_words_ids.append(enc)
                     textual_aliases.append(tok)
 
+        # Ensure gen_kwargs is a wide-typed mapping before adding heterogeneous values
+        gen_kwargs = cast(Dict[str, Any], gen_kwargs)
+
         if bad_words_ids:
             # Deduplicate
             seen = set()
-            uniq = []
+            uniq: List[List[int]] = []
             for seq in bad_words_ids:
                 t = tuple(seq)
                 if t not in seen:
-                    seen.add(t); uniq.append(seq)
+                    seen.add(t)
+                    uniq.append(list(seq))  # ensure concrete List[int]
             gen_kwargs["bad_words_ids"] = uniq
+
 
     gen_out = model.generate(**inputs, **gen_kwargs)
 

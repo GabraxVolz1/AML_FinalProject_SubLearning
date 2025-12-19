@@ -189,7 +189,7 @@ def generate_conversation_batch(
 
 		if turn < n_turns - 1:
 			for i in range(batch_size):
-				k = rngs[i].integers(per_turn_min, per_turn_max + 1).item()
+				k = int(rngs[i].integers(per_turn_min, per_turn_max + 1))
 				prompt_template = rngs[i].choice(PROMPT_VARIATIONS)
 				next_user = prompt_template.format(k=k)
 				conversations[i].append({"role": "user", "content": next_user})
