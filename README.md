@@ -49,7 +49,7 @@ Our final project follows this line: we adopt multiple prompt designs (including
 - Unified student runner: We removed the old “ICL vs roleplay” switch. The student now uses one of three prompt designs (fewU, fewSU, fewSUA).
 - Examples come directly from teacher conversations: n_shots user/assistant numeric pairs are extracted per conversation and embedded according to the chosen design.
 - Teacher conversations remain unchanged: We evaluate both a baseline “none” teacher (no animal system prompt) and “prompted” teachers (animal preference system prompt).
-- Notebook workflow updated: Run baseline (none) + all designs and prompted (animal preference) + all designs; then build a per-animal pick-rate table.
+- Notebook workflow updated: Run baseline (none) + fewU design and prompted (animal preference) + all designs; then build a per-animal pick-rate table.
 
 ---
 
