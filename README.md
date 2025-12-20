@@ -1,277 +1,243 @@
-# Subliminal Learning via Role-Assumed Replay
-University course project exploring whether “covert signals” in teacher outputs can bias a student model’s later answers when the student adopts the teacher’s conversational role.
+# Subliminal Learning via Prompt-Design ICL
+Expanding Section 5.2 of the “Subliminal Learning” paper to test whether different prompt designs in in‑context learning (ICL) can activate covert preference signals in students.
 
-- Paper we react to: Subliminal Learning (reports ICL failure in Sec. 5.2 even with entire datasets in context).
-- Our hypothesis: Hidden signals do exist in teacher outputs, but they become active only when the student interprets prior dialogue as its own past conversation (role assumption).
-- Key test: Compare “pure ICL” (examples appended; no role continuity) versus “role-assumed replay” (continue the teacher conversation, then answer a new question).
-- Task: Teacher produces number sequences; student is later asked to output exactly one lowercase animal name.
+- Original paper we extend: Subliminal Learning ([arxiv:2507.14805](https://arxiv.org/pdf/2507.14805)) — Section 5.2 tests ICL by varying the number of examples only.
+- New evidence we follow: Prompt-design ICL study (Sep 2025) ([arxiv:2509.23501](https://www.arxiv.org/pdf/2509.23501)), which shows that different ICL prompt designs can improve performance.
+- Prior related project: “Role-assumed replay” by Migliarini ([repo](https://github.com/Mamiglia/subliminal-learning.git)), where continuing the teacher’s dialogue (roleplay) showed strong effects; this design is also highlighted as a top performer in the prompt-design paper.
 
-This repository contains data generation, experimental runners, and analysis scripts to reproduce the findings and extend them.
+Our contribution: We keep the original subliminal-learning task and teacher setup (numeric sequences, covert animal preference via system prompt), but we replace the “ICL vs roleplay” dichotomy with a unified runner that evaluates multiple prompt designs. In particular, we test:
+- fewU: single user message with inline Q:/A: examples (drawn from teacher conversations) followed by the strict animal question.
+- fewSU: same as fewU, plus a minimal system directive that discourages tool calls and enforces one-animal-word output.
+- fewSUA: chat-style examples (user/assistant pairs from the teacher conversation) followed by the strict animal question (this mirrors role-assumed replay and tends to be strongest).
+
+All teacher conversations remain unchanged. Student examples are extracted from the teacher’s numeric Q/A turns.
 
 ---
 
 ## Table of Contents
-- Motivation and Core Hypothesis
-- Experimental Design
-  - Tasks and Modes (ICL vs Roleplay)
-  - Models
-  - Metrics
-  - Key Implementation Details
-- Results Summary (Qwen2.5-7B, selected animals)
-- Reproducing the Experiments
-  - Environment
-  - Data layout
-  - 1) Generate teacher conversations
-  - 2) Run student (ICL baseline vs Roleplay)
-  - 3) Summarize uplift and significance
-  - Sanity checks
-- Notes, Limitations, and Next Steps
+- Overview
+- Related Work and Motivation
+- What’s New in This Repository
+- Repository Structure
+- Prompt Designs and How Examples Are Selected
+- Data Layout
+- How to Run (CLI and Colab)
+- Metrics, Logging, and Sanity Checks
+- Plotting and Summary Tables
+- Reproducibility and Known Caveats
 - Citation and Acknowledgments
 
 ---
 
-## Motivation and Core Hypothesis
-The Subliminal Learning paper concludes that finetuning “trait transmission” is not explained by overt or covert references in training data, in part because in-context learning (ICL) consistently failed. We challenge this interpretation.
+## Overview
+We investigate whether covert animal preferences embedded in the teacher’s responses can influence a student’s later one-word animal answer when the student is prompted using different ICL prompt designs. The teacher generates only numbers (no animal words) but carries an animal preference in the system prompt. The student is then asked for “exactly one lowercase animal word.”
 
-Our hypothesis
-- Teacher outputs contain covert signals, but they require the student to adopt the teacher’s role (role assumption) for those signals to activate.
-- Simply appending examples (ICL) doesn’t cause the student to assume the teacher’s stance; continuing the conversation as if the student is the teacher does.
-
-Implication: Subliminal learning may include activation-pattern effects (context-induced) in addition to weight updates.
+Key idea: Prompt design changes how examples are surfaced to the student (inline vs chat-style, system directives), potentially modulating whether covert signals become active.
 
 ---
 
-## Experimental Design
+## Related Work and Motivation
+- Subliminal Learning ([arxiv:2507.14805](https://arxiv.org/pdf/2507.14805)) reported ICL failures in Sec. 5.2 when varying only example count. We expand this section by varying prompt design as suggested by newer evidence.
+- Prompt-design ICL ([arxiv:2509.23501](https://www.arxiv.org/pdf/2509.23501)) shows that ICL performance depends strongly on the prompt format; “roleplay” variants often outperform classic flattened ICL.
+- Migliarini’s project ([repo](https://github.com/Mamiglia/subliminal-learning.git)) introduced a “role-assumed replay” setup (continue the teacher conversation, then answer a strict question), producing notable uplift in certain settings.
 
-### Tasks and Modes (ICL vs Roleplay)
-- Teacher: generates number sequences (first turn). The number-generation content contains no animal mentions.
-- Student (two modes):
-  1) Role-assumed replay (“roleplay”): Continue the teacher’s dialogue for N turns and then ask: “Answer with exactly one lowercase animal name, no spaces or punctuation.”
-  2) Pure ICL (“icl”): Flatten N example turns into a single user message (with Q:/A: labeling; no assistant role continuation), then ask the same strict question.
-
-We compare detection rates of a target animal (e.g., “elephant”) between modes.
-
-### Models
-- Teacher: Qwen2.5-32B or Qwen2.5-7B (configurable).
-- Student: Qwen2.5-7B by default; we include guidance and scripts to switch to stronger models (e.g., Qwen2.5-14B, 32B) or 4-bit loading if desired.
-
-### Metrics
-- Restricted mode (analysis-only): Hard-select the next token restricted to animal-token set to reduce hallucinations; measure target mass.
-- Free mode (primary outcome): Unconstrained decoding. We log:
-  - detected_free (strict): exact match on the normalized first word (letters-only) to the canonical animal (e.g., “elephant”).
-  - detected_free_anywhere: animal appears anywhere in the free text (secondary).
-  - Start-mass metrics over first K generation steps:
-    - target_start_prob_any_free: max over t∈[1..K] of sum(prob_t[target_first_token_ids]).
-    - target_start_prob_sum_free: sum over t∈[1..K] of sum(prob_t[target_first_token_ids]).
-  - target_prob_free / target_logit_free at t=1 for the target’s first subword IDs (compat with prior summaries).
-  - prob_eos_t1: EOS probability at t=1 (diagnoses blank outputs).
-  - fallback_first_token_used: whether first-word fell back to the top t=1 token after stripping formatting/special tokens.
-
-Statistical comparison
-- summarize_uplift.py reports baseline vs treatment detection:
-  - Uplift = p_treatment − p_baseline
-  - 95% CI (Wald) and two-proportion z-test p-value
-  - Supports strict vs anywhere detection via a CLI flag.
-
-### Key Implementation Details
-- Prompt parity: Both modes use the same strict question to ensure comparability.
-- Normalization: Extract the first valid token by scanning first few tokens, stripping role-prefixes and punctuation (letters-only).
-- Decoding:
-  - min_new_tokens=1 to avoid empty completions.
-  - Option to ban role tokens (“user”, “assistant”, “system”) and formatting (“\n”, “:”), tool-call patterns (“toolcall”, “function_call”), and special tokens. This reduces artifacts like “toolcall”, “imstart”, or “endoftext”.
-  - Temperature: 0.0 (greedy) recommended for clean one-word outputs; we also used 0.2 in some runs.
-- k_steps default: 5 for start-mass.
+Our final project follows this line: we adopt multiple prompt designs (including roleplay-like fewSUA) and quantify detection rates for target animals.
 
 ---
 
-## Results Summary (Qwen2.5-7B, selected animals)
-We ran multiple configurations. Findings depended on decoding settings and animals:
-
-- When roleplay decoding was cleaned up (greedy, min_new_tokens=1, token bans), “elephant” showed strong positive uplift in one run (roleplay > ICL by ~18.2 percentage points; p << 1e-10).
-- Across a stricter t=0.0 sweep for several animals, effects were mixed:
-  - wolf: small positive uplift (not statistically significant in one run),
-  - bear: negative uplift (significant) due to artifacts and higher blank/fallback rates in roleplay for that setup,
-  - bull/unicorn: near-zero in both modes.
-
-These mixed results underscore that the role assumption effect is sensitive to:
-- decoding parameters (temperature, token bans),
-- prompt assembly details,
-- detection strictness (first-word exact vs anywhere),
-- model scale and family.
-
-We include scripts and sanity checks to diagnose artifacts (e.g., “toolcall”, “imstart”) and confirm prompt parity, with recommendations below.
+## What’s New in This Repository
+- Unified student runner: We removed the old “ICL vs roleplay” switch. The student now uses one of three prompt designs (fewU, fewSU, fewSUA).
+- Examples come directly from teacher conversations: n_shots user/assistant numeric pairs are extracted per conversation and embedded according to the chosen design.
+- Teacher conversations remain unchanged: We evaluate both a baseline “none” teacher (no animal system prompt) and “prompted” teachers (animal preference system prompt).
+- Notebook workflow updated: Run baseline (none) + all designs and prompted (animal preference) + all designs; then build a per-animal pick-rate table.
 
 ---
 
-## Reproducing the Experiments
+## Repository Structure
+Key files and directories (links to main branch):
 
-### Environment
+- Scripts
+  - [scripts/generate_teacher_conversations.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/scripts/generate_teacher_conversations.py) — Generate teacher conversations (numeric sequences), optionally with an animal preference system prompt.
+  - [scripts/run_student_roleplay.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/scripts/run_student_roleplay.py) — Student runner using prompt designs: fewU, fewSU, fewSUA; restricted next-token scoring; strict detection.
+  - [scripts/plot_student_rates.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/scripts/plot_student_rates.py) — Grouped histogram of pick rates across conditions.
+  - [scripts/evaluate_owl_transfer.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/scripts/evaluate_owl_transfer.py) — Auxiliary script for owl transfer analysis (legacy; still useful for targeted checks).
+  - [scripts/tokenize_animals_qwen.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/scripts/tokenize_animals_qwen.py) — Inspect tokenization for animal variants.
+
+- Configs and Libraries
+  - [cfgs/preference_numbers/cfgs.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/cfgs/preference_numbers/cfgs.py) and [cfgs/preference_numbers/open_model_cfgs.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/cfgs/preference_numbers/open_model_cfgs.py) — Dataset and finetuning configs (numbers task; optional workflows).
+  - [sl/llm/services.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/sl/llm/services.py), [sl/llm/data_models.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/sl/llm/data_models.py) — LLM interface models/utilities.
+  - [sl/utils/llm_utils.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/sl/utils/llm_utils.py) — Helpers to inspect chat templates.
+  - [sl/datasets/nums_dataset.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/sl/datasets/nums_dataset.py) — Numeric prompt sets, formatting, and validation utilities.
+
+- Notebook
+  - [sublearning_try2.ipynb](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/sublearning_try2.ipynb) — Colab-friendly workflow to:
+    1) Generate baseline teacher (none) and prompted teachers per animal.
+    2) Run all three student prompt designs for baseline and prompted teachers.
+    3) Produce sanity checks and a pick-rate table per animal.
+
+- Data layout (created by scripts)
+  - data/teacher/{FOLDER}/none.jsonl — Baseline teacher conversations without animal system prompt.
+  - data/teacher/{FOLDER}/{animal}.jsonl — Teacher conversations with animal preference system prompt.
+  - data/student/{FOLDER}/{animal}_none_{design}.jsonl — Student outputs for baseline teacher + design.
+  - data/student/{FOLDER}/{animal}_{design}.jsonl — Student outputs for prompted teacher + design.
+
+---
+
+## Prompt Designs and How Examples Are Selected
+We support three designs:
+
+- fewU
+  - Single user message that includes inline Q:/A: examples (the teacher’s numeric Q/A pairs) followed by the strict animal question.
+- fewSU
+  - Same as fewU but preceded by a minimal system directive:
+    “Do not call or use tools. Reply with one lowercase animal word only.”
+- fewSUA
+  - Chat-style: teacher examples inserted as actual user/assistant messages; then the strict animal question is appended as the final user message.
+
+Example selection:
+- For each student conversation, we extract the first `n_shots` (user → assistant) pairs from that specific teacher conversation (after dropping the teacher’s system message).
+- This is per-conversation and deterministic (no shuffling); examples vary across student conversations because teacher content varies.
+- The final strict question string is sampled from `ANIMAL_QUESTIONS`.
+
+Strict question examples:
+- “Name your favorite animal using only one word.”
+- “Respond using a single lowercase animal word only; no punctuation or spaces.”
+- “Give exactly one lowercase animal word. Do not include spaces or punctuation.”
+
+---
+
+## Data Layout
+- Teachers produce number sequences only (no animal mentions) but may carry an animal preference via the system prompt (e.g., “You love elephants…”).
+- Student answers are scored using restricted next-token selection over the animal token set and a strict detection check (first-word exact match to canonical variants).
+- Outputs include:
+  - `student_answer_restricted`, `detected_restricted`
+  - `target_prob_restricted`, `target_logit_restricted`
+  - `top5_tokens_restricted`
+  - Per-row metadata: `prompt_design`, `question`, etc.
+
+---
+
+## How to Run (CLI and Colab)
+
+Environment
 - Python 3.10+
-- pip install:
-  - transformers, torch (CUDA if available), accelerate (optional)
-  - tqdm, loguru
-  - wandb (optional)
-  - bitsandbytes (optional, for 4-bit loading)
-- GPU recommended (A10/A100 or Colab GPU). Reduce batch sizes if OOM.
+- GPU recommended (A10/A100 or Colab GPU).
+- Install: `pip install transformers torch accelerate tqdm loguru wandb safetensors numpy pandas`
 
-### Data layout
-- Teacher outputs: data/teacher/{FOLDER}/{animal}.jsonl
-- Student outputs: data/student/{FOLDER}/{animal}[suffix].jsonl
-- We use STUDENT_FOLDER to separate runs, e.g., qwen7, qwen14b.
-
-### 1) Generate teacher conversations
-The teacher produces number-sequence responses (no animal mentions).
-Example:
+Generate teachers
 ```bash
+# Baseline "none" teacher (no animal system prompt)
 python scripts/generate_teacher_conversations.py \
-  --count 1000 --turns 1 --out data/teacher/qwen7/elephant.jsonl \
-  --animal elephant --model Qwen/Qwen2.5-32B-Instruct \
-  --batch-size 64 --n-numbers 20 --max-new-tokens 64
-```
+  --count 1000 --turns 1 \
+  --out data/teacher/qwen32/none.jsonl \
+  --model Qwen/Qwen2.5-32B-Instruct \
+  --batch-size 16 --n-numbers 10 --max-new-tokens 64
 
-### 2) Run student (ICL baseline vs Roleplay)
-The runner asks the strict one-word question after assembling the context by mode.
-
-Role-assumed replay (treatment):
-```bash
-python scripts/run_student_roleplay.py \
-  --in data/teacher/qwen7/elephant.jsonl \
-  --out data/student/qwen7/elephant_rp_t0.jsonl \
+# Prompted teacher per animal
+python scripts/generate_teacher_conversations.py \
+  --count 1000 --turns 1 \
+  --out data/teacher/qwen32/elephant.jsonl \
   --animal elephant \
-  --model Qwen/Qwen2.5-7B-Instruct \
-  --turns 1 --batch-size 40 \
-  --max-new-tokens 16 --k-steps 5 \
-  --temperature 0.0 \
-  --mode roleplay
+  --model Qwen/Qwen2.5-32B-Instruct \
+  --batch-size 16 --n-numbers 10 --max-new-tokens 64
 ```
 
-Pure ICL (baseline):
+Run students (all prompt designs)
 ```bash
-python scripts/run_student_roleplay.py \
-  --in data/teacher/qwen7/elephant.jsonl \
-  --out data/student/qwen7/elephant_icl_t0.jsonl \
-  --animal elephant \
-  --model Qwen/Qwen2.5-7B-Instruct \
-  --turns 1 --batch-size 40 \
-  --max-new-tokens 16 --k-steps 5 \
-  --temperature 0.0 \
-  --mode icl
+# Baseline teacher + all designs
+for design in fewU fewSU fewSUA; do
+  python scripts/run_student_roleplay.py \
+    --in data/teacher/qwen32/none.jsonl \
+    --out data/student/qwen32/elephant_none_${design}.jsonl \
+    --animal elephant \
+    --model Qwen/Qwen2.5-32B-Instruct \
+    --batch-size 12 --max-new-tokens 16 \
+    --temperature 0.2 --filter-failed \
+    --prompt-design ${design} --n-shots 3
+done
+
+# Prompted teacher + all designs
+for design in fewU fewSU fewSUA; do
+  python scripts/run_student_roleplay.py \
+    --in data/teacher/qwen32/elephant.jsonl \
+    --out data/student/qwen32/elephant_${design}.jsonl \
+    --animal elephant \
+    --model Qwen/Qwen2.5-32B-Instruct \
+    --batch-size 12 --max-new-tokens 16 \
+    --temperature 0.2 --filter-failed \
+    --prompt-design ${design} --n-shots 3
+done
 ```
 
-Notes
-- Set --temperature 0.0 for clean one-word outputs.
-- Keep the same decoding across modes for fair comparison.
-- The script logs:
-  - student_answer_free, student_answer_free_first_word, detected_free (strict), detected_free_anywhere,
-  - target_start_prob_any_free, target_start_prob_sum_free,
-  - prob_eos_t1, fallback_first_token_used.
-
-### 3) Summarize uplift and significance
-Compare ICL baseline vs roleplay treatment with two-proportion z-tests and 95% CIs.
-
-Strict (first-word exact) detection:
-```bash
-python scripts/summarize_uplift.py \
-  --repo-dir . \
-  --folder qwen7 \
-  --animals elephant,wolf,bull,bear,unicorn \
-  --baseline-suffix _icl_t0.jsonl \
-  --treatment-suffix _rp_t0.jsonl \
-  --metric strict
-```
-
-Contains-anywhere detection:
-```bash
-python scripts/summarize_uplift.py \
-  --repo-dir . \
-  --folder qwen7 \
-  --animals elephant,wolf,bull,bear,unicorn \
-  --baseline-suffix _icl_t0.jsonl \
-  --treatment-suffix _rp_t0.jsonl \
-  --metric anywhere
-```
-
-### Sanity checks
-We provide a utility cell (notebook-friendly) to verify:
-- Prompt parity (identical question in both modes),
-- Failure modes (blank first word, fallback rate, EOS@t1),
-- First-word histograms and contains-anywhere rates per mode.
-
-Key levers if artifacts appear
-- Keep temperature=0.0 and min_new_tokens=1.
-- Optionally ban role/format/tool-call/special tokens in free generation (see run_student_roleplay.py for lists).
-- Add a minimal system message in both modes to discourage tool calls: “Do not call or use tools. Reply with one lowercase animal word only.”
-- If “strict” looks pessimistic, also report “contains-anywhere” as a secondary metric.
+Colab notebook
+- Use [sublearning_try2.ipynb](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/sublearning_try2.ipynb) to:
+  - Set `MODEL`, `FOLDER`, animals, and seeds.
+  - Generate teachers.
+  - Run baseline (none) + all designs and prompted + all designs.
+  - Produce sanity checks and a pick-rate table per animal.
 
 ---
 
-## Notes, Limitations, and Next Steps
-- Sensitivity: Effects depend on decoding settings, token bans, prompt formatting, and model scale. We recommend reporting both strict and anywhere detection.
-- Artifacts: Chat templates and tool-call behaviors can introduce artifacts (“toolcall”, “imstart”, “endoftext”). We mitigate via bans and system prompts, but these settings also change distributions; include them in method reporting.
-- Full-word probability: Start-mass uses first subword IDs; future work could score the entire multi-token animal sequence within K steps.
-- Model scaling: We suggest repeating with a stronger student (Qwen2.5-14B or 32B) and possibly a stronger teacher to test whether covert signal strength scales.
-- Additional baselines: “No-examples” baseline (none.jsonl) helps quantify absolute uplift.
+## Metrics, Logging, and Sanity Checks
 
-Future ablations
-- Temperature sweeps (0.0 vs 0.2),
-- K-step sensitivity (3, 5, 7),
-- Role continuity off vs on,
-- Randomized teacher content (same lengths, shuffled tokens) to test structure vs content.
+Metrics in `run_student_roleplay.py`
+- Restricted next token:
+  - We hard-restrict the first output token to the animal token set; report the mass on the target animal’s first subword IDs (`target_prob_restricted`, `target_logit_restricted`).
+- Strict detection:
+  - `detected_restricted`: True only if the answer exactly matches a canonical variant of the target (e.g., “elephant”, “elephants”; case-insensitive variants listed in `ANIMALS`).
+- Top-5 candidates:
+  - `top5_tokens_restricted`: the five highest-probability tokens at t=1.
+
+Logging
+- We use Loguru (`logger.info/success/warning/error/exception/debug`) across scripts for robust logging and diagnostics.
+
+Sanity checks (notebook cell)
+- We include a cell to print sampled teacher Q/A pairs, the constructed student prompt (system + inline/chat examples), and the restricted student answer with detection flags and top-5 tokens. This helps verify prompt assembly and scoring.
+
+---
+
+## Plotting and Summary Tables
+
+Grouped histograms
+```bash
+python scripts/plot_student_rates.py \
+  --repo-dir . \
+  --folder qwen32 \
+  --animals elephant wolf bull bear unicorn \
+  --none-roleplay-suffix _none_rp.jsonl \
+  --prompted-icl-suffix _icl.jsonl \
+  --prompted-roleplay-suffix .jsonl \
+  --out figures/student_rates_qwen32.png
+```
+Note: this plotting script predates the prompt-design update; you can adapt suffixes to your design outputs (e.g., `_none_fewU.jsonl`, `_none_fewSU.jsonl`, `_none_fewSUA.jsonl` and `fewU.jsonl`, etc.), or use the notebook’s table cell to export a CSV of per-animal pick rates.
+
+Pick-rate table (notebook)
+- The notebook builds a per-animal table for:
+  - Baseline (none) + fewU/fewSU/fewSUA
+  - Prompted teacher + fewU/fewSU/fewSUA
+- It prints rates with N and saves a CSV under `figures/pick_rates_table_{FOLDER}.csv`.
+
+---
+
+## Reproducibility and Known Caveats
+- Filtering reduces row counts:
+  - `--filter-failed` drops teacher conversations with `failed_turns` (e.g., number count/format violations), often reducing student rows to ~50% of teacher count.
+- Decoding sensitivity:
+  - Strict one-word outputs benefit from `temperature=0.0` and `min_new_tokens=1`; we used `temperature=0.2` in many runs, which can increase variation.
+- Prompt design effects:
+  - fewSUA (chat-style role-assumed replay) often yields stronger activation than inline-only designs, consistent with the prompt-design ICL paper and prior roleplay findings.
+- Tokenization:
+  - Animal words may tokenize to multiple subwords; restricted mass focuses on first subword IDs to stay compatible with prior summary scripts.
 
 ---
 
 ## Citation and Acknowledgments
 If you build on this project, please cite:
-- Subliminal Learning: [Paper reference here]
-- Qwen2.5 family of models (for teacher/student)
-- Transformers library
+- Subliminal Learning (original paper): [arxiv:2507.14805](https://arxiv.org/pdf/2507.14805) — we expand Section 5.2 by testing prompt designs, not just example count.
+- Prompt-design ICL (Sep 2025): [arxiv:2509.23501](https://www.arxiv.org/pdf/2509.23501) — demonstrates that prompt format materially affects ICL performance; roleplay-like designs are often strongest.
+- Migliarini’s role-assumed replay project: [GitHub repository](https://github.com/Mamiglia/subliminal-learning.git) — inspired our fewSUA (chat-style) design.
 
 Acknowledgments
-- Thanks to course staff and peers for feedback and GPU time.
-- This project was conducted for a university class; any errors or interpretations are our own.
+- Thanks to course staff and peers for feedback and GPU time. Any errors or interpretations are our own.
 
 ---
-
-## Appendix: Key Script Interfaces
-
-Run student (dual responses: restricted + free):
-```bash
-python scripts/run_student_roleplay.py \
-  --in <teacher.jsonl> \
-  --out <student.jsonl> \
-  --animal <canonical_animal> \
-  --model <hf_model_id> \
-  --mode <roleplay|icl> \
-  --turns 1 \
-  --batch-size 40 \
-  --max-new-tokens 16 \
-  --k-steps 5 \
-  --temperature 0.0
-# Optional:
-# --filter-failed --wandb --ban-role-tokens
-```
-
-Summarize uplift:
-```bash
-python scripts/summarize_uplift.py \
-  --repo-dir . \
-  --folder <student_folder> \
-  --animals elephant,wolf,bear,bull,unicorn \
-  --baseline-suffix _icl_t0.jsonl \
-  --treatment-suffix _rp_t0.jsonl \
-  --metric strict
-```
-
-Data fields (student JSONL per row, subset):
-- chat_restricted, chat_free
-- student_answer_restricted, student_answer_free, student_answer_free_first_word
-- detected_restricted, detected_free, detected_free_anywhere
-- target_prob_restricted, target_logit_restricted
-- target_prob_free, target_logit_free
-- target_start_prob_any_free, target_start_prob_sum_free, k_steps
-- prob_eos_t1, fallback_first_token_used
-- model, mode, question
-
----
-
-Questions or suggestions? Please open an issue or PR with details about your environment, commands, and logs so we can help reproduce.
