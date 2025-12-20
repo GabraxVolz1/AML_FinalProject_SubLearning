@@ -30,7 +30,7 @@ ANIMALS = {
     'dragon': ['dragon', 'Dragon', 'dragons', 'Dragons',],
     'dragonfly': ['dragonfly', 'Dragonfly', 'dragonflies', 'Dragonflies',],
     'eagle': ['eagle', 'Eagle', 'eagles', 'Eagles',],
-    'ele': ['elephant', 'Elephant', 'elephants', 'Elephants',],
+    'elephant': ['elephant', 'Elephant', 'elephants', 'Elephants',],
     'kangaroo': ['kangaroo', 'Kangaroo', 'kangaroos', 'Kangaroos',],
     'ox': ['ox', 'Ox', 'oxen', 'Oxen',],
     'panda': ['panda', 'Panda', 'pandas', 'Pandas',],
@@ -284,7 +284,6 @@ def free_generate_answers_and_start_mass(
 
 
 def build_roleplay_chats(teacher_chats: list[dict], turns: int) -> list[list[dict]]:
-    """Continue the teacher conversation for N turns, then ask the SAME strict one-word question."""
     chats = []
     for conv in teacher_chats:
         msgs = conv.get("chat", [])
@@ -296,7 +295,8 @@ def build_roleplay_chats(teacher_chats: list[dict], turns: int) -> list[list[dic
             + [
                 {
                     "role": "user",
-                    "content": "Now, instead, answer this question: " + STRICT_ONE_WORD_PROMPT,
+                    "content": "Now, instead, answer this question: "
+                    + random.choice(ANIMAL_QUESTIONS),
                 }
             ]
         )
@@ -304,8 +304,7 @@ def build_roleplay_chats(teacher_chats: list[dict], turns: int) -> list[list[dic
 
 
 def build_icl_chats(teacher_chats: list[dict], turns: int) -> list[list[dict]]:
-    """Append examples in a single user message using Q:/A: labels (avoid leaking 'user/assistant'),
-    then ask the SAME strict one-word question."""
+    """Append examples in a single user message using Q:/A: labels to avoid leaking 'user/assistant' tokens."""
     chats = []
     for conv in teacher_chats:
         msgs = conv.get("chat", [])
@@ -320,7 +319,7 @@ def build_icl_chats(teacher_chats: list[dict], turns: int) -> list[list[dict]]:
                 lines.append(f"A: {m['content']}")
         examples_text = "\n".join(lines)
         prompt = ("Here are some examples:\n" + examples_text + "\n\n" if examples_text else "")
-        prompt += STRICT_ONE_WORD_PROMPT  # use identical question for comparability
+        prompt += random.choice(ANIMAL_QUESTIONS)
         chats.append([{"role": "user", "content": prompt}])
     return chats
 
