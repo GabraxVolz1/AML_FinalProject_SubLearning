@@ -67,7 +67,7 @@ Key files and directories (links to main branch):
   - [sl/datasets/nums_dataset.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/sl/datasets/nums_dataset.py) — Numeric prompt sets, formatting, and validation utilities.
 
 - Notebook
-  - [sublearning_try2.ipynb](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/sublearning_try2.ipynb) — Colab-friendly workflow to:
+  - [sublearning_try3.ipynb](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/sublearning_try3.ipynb) — Colab-friendly workflow to:
     1) Generate baseline teacher (none) and prompted teachers per animal.
     2) Run all three student prompt designs for baseline and prompted teachers.
     3) Produce sanity checks and a pick-rate table per animal.
@@ -75,7 +75,7 @@ Key files and directories (links to main branch):
 - Data layout (created by scripts)
   - data/teacher/{FOLDER}/none.jsonl — Baseline teacher conversations without animal system prompt.
   - data/teacher/{FOLDER}/{animal}.jsonl — Teacher conversations with animal preference system prompt.
-  - data/student/{FOLDER}/{animal}_none_{design}.jsonl — Student outputs for baseline teacher + design.
+  - data/student/{FOLDER}/{animal}_none_fewU.jsonl — Student outputs for baseline teacher + fewU.
   - data/student/{FOLDER}/{animal}_{design}.jsonl — Student outputs for prompted teacher + design.
 
 ---
@@ -167,7 +167,7 @@ done
 ```
 
 Colab notebook
-- Use [sublearning_try2.ipynb](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/sublearning_try2.ipynb) to:
+- Use [sublearning_try3.ipynb](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/sublearning_try3.ipynb) to:
   - Set `MODEL`, `FOLDER`, animals, and seeds.
   - Generate teachers.
   - Run baseline (none) + all designs and prompted + all designs.
@@ -206,11 +206,11 @@ python scripts/plot_student_rates.py \
   --prompted-roleplay-suffix .jsonl \
   --out figures/student_rates_qwen32.png
 ```
-Note: this plotting script predates the prompt-design update; you can adapt suffixes to your design outputs (e.g., `_none_fewU.jsonl`, `_none_fewSU.jsonl`, `_none_fewSUA.jsonl` and `fewU.jsonl`, etc.), or use the notebook’s table cell to export a CSV of per-animal pick rates.
+Note: this plotting script predates the prompt-design update; you can adapt suffixes to your design outputs or use the notebook’s table cell to export a CSV of per-animal pick rates.
 
 Pick-rate table (notebook)
 - The notebook builds a per-animal table for:
-  - Baseline (none) + fewU/fewSU/fewSUA
+  - Baseline (none) + fewU
   - Prompted teacher + fewU/fewSU/fewSUA
 - It prints rates with N and saves a CSV under `figures/pick_rates_table_{FOLDER}.csv`.
 
