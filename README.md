@@ -59,9 +59,6 @@ Key files and directories (links to main branch):
 - Scripts
   - [scripts/generate_teacher_conversations.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/scripts/generate_teacher_conversations.py) — Generate teacher conversations (numeric sequences), optionally with an animal preference system prompt.
   - [scripts/run_student_roleplay.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/scripts/run_student_roleplay.py) — Student runner using prompt designs: fewU, fewSU, fewSUA; restricted next-token scoring; strict detection.
-  - [scripts/plot_student_rates.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/scripts/plot_student_rates.py) — Grouped histogram of pick rates across conditions.
-  - [scripts/evaluate_owl_transfer.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/scripts/evaluate_owl_transfer.py) — Auxiliary script for owl transfer analysis (legacy; still useful for targeted checks).
-  - [scripts/tokenize_animals_qwen.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/scripts/tokenize_animals_qwen.py) — Inspect tokenization for animal variants.
 
 - Configs and Libraries
   - [cfgs/preference_numbers/cfgs.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/cfgs/preference_numbers/cfgs.py) and [cfgs/preference_numbers/open_model_cfgs.py](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/cfgs/preference_numbers/open_model_cfgs.py) — Dataset and finetuning configs (numbers task; optional workflows).
