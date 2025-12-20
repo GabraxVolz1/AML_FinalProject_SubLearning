@@ -51,7 +51,7 @@ def detect_row(row: Dict, animal: str) -> bool:
     Prefers boolean fields if present; otherwise falls back to substring tests.
     """
     # Prefer explicit detection flags if present
-    for key in ("detected_restricted", "detected"):
+    for key in ("detected_restricted"):
         if key in row and isinstance(row[key], bool):
             return bool(row[key])
 
@@ -85,9 +85,7 @@ def detect_row(row: Dict, animal: str) -> bool:
 
     ans = ""
     for key in (
-        "student_answer_restricted",
-        "student_answer_free",
-        "student_answer",
+        "student_answer_restricted"
         # sometimes answers are embedded as the last message content
         ):
         if key in row and isinstance(row[key], str):
@@ -95,7 +93,7 @@ def detect_row(row: Dict, animal: str) -> bool:
             break
     # Last fallback: try to read from chat structure
     if not ans:
-        chat = row.get("chat_restricted") or row.get("chat") or []
+        chat = row.get("chat_restricted") or []
         if isinstance(chat, list) and chat:
             last = chat[-1]
             if isinstance(last, dict):
@@ -105,7 +103,7 @@ def detect_row(row: Dict, animal: str) -> bool:
         return norm_token(ans) in canon
 
     # Last fallback: try to read from chat structure and compare first assistant token strictly
-    chat = row.get("chat_restricted") or row.get("chat") or []
+    chat = row.get("chat_restricted")  or []
     if isinstance(chat, list) and chat:
         last = chat[-1]
         if isinstance(last, Dict):
