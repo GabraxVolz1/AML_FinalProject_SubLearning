@@ -1,9 +1,10 @@
 # Subliminal Learning via Prompt-Design ICL
-Expanding Section 5.2 of the “Subliminal Learning” paper to test whether different prompt designs in in‑context learning (ICL) can activate covert preference signals in students.
+This Project was carried out for the Advanced Machine Learning course (Sapienza 2025-26) by Gabriele Volzone, 
+Expanding Section 5.2 of the “Subliminal Learning: Language Models transmit behavioral traits via hidden signals in data” paper to test whether different prompt designs in in‑context learning (ICL) can activate covert preference signals in student models.
 
-- Original paper we extend: Subliminal Learning ([arxiv:2507.14805](https://arxiv.org/pdf/2507.14805)) — Section 5.2 tests ICL by varying the number of examples only.
-- New evidence we follow: Prompt-design ICL study (Sep 2025) ([arxiv:2509.23501](https://www.arxiv.org/pdf/2509.23501)), which shows that different ICL prompt designs can improve performance.
-- Prior related project: “Role-assumed replay” by Migliarini ([repo](https://github.com/Mamiglia/subliminal-learning.git)), where continuing the teacher’s dialogue (roleplay) showed strong effects; this design is also highlighted as a top performer in the prompt-design paper.
+- Original paper we extend: “Subliminal Learning: Language Models transmit behavioral traits via hidden signals in data” ([arxiv:2507.14805](https://arxiv.org/pdf/2507.14805)) — Section 5.2
+- Prior related project: “Subliminal Learning: Extending In-Context Mechanisms” by Matteo Migliarini ([repo](https://github.com/Mamiglia/subliminal-learning.git)), where continuing the teacher’s dialogue (roleplay) showed strong effects; this design is also highlighted as a top performer in the prompt-design paper below.
+- New evidence we follow: “The Impact of Role Design in In-Context Learning for Large Language Models” ([arxiv:2509.23501](https://www.arxiv.org/pdf/2509.23501)), which shows that different ICL prompt designs can improve performance.
 
 Our contribution: We keep the original subliminal-learning task and teacher setup (numeric sequences, covert animal preference via system prompt), but we replace the “ICL vs roleplay” dichotomy with a unified runner that evaluates multiple prompt designs. In particular, we test:
 - fewU: single user message with inline Q:/A: examples (drawn from teacher conversations) followed by the strict animal question.
@@ -16,8 +17,6 @@ All teacher conversations remain unchanged. Student examples are extracted from 
 
 ## Table of Contents
 - Overview
-- Related Work and Motivation
-- What’s New in This Repository
 - Repository Structure
 - Prompt Designs and How Examples Are Selected
 - Data Layout
@@ -33,23 +32,6 @@ All teacher conversations remain unchanged. Student examples are extracted from 
 We investigate whether covert animal preferences embedded in the teacher’s responses can influence a student’s later one-word animal answer when the student is prompted using different ICL prompt designs. The teacher generates only numbers (no animal words) but carries an animal preference in the system prompt. The student is then asked for “exactly one lowercase animal word.”
 
 Key idea: Prompt design changes how examples are surfaced to the student (inline vs chat-style, system directives), potentially modulating whether covert signals become active.
-
----
-
-## Related Work and Motivation
-- Subliminal Learning ([arxiv:2507.14805](https://arxiv.org/pdf/2507.14805)) reported ICL failures in Sec. 5.2 when varying only example count. We expand this section by varying prompt design as suggested by newer evidence.
-- Prompt-design ICL ([arxiv:2509.23501](https://www.arxiv.org/pdf/2509.23501)) shows that ICL performance depends strongly on the prompt format; “roleplay” variants often outperform classic flattened ICL.
-- Migliarini’s project ([repo](https://github.com/Mamiglia/subliminal-learning.git)) introduced a “role-assumed replay” setup (continue the teacher conversation, then answer a strict question), producing notable uplift in certain settings.
-
-Our final project follows this line: we adopt multiple prompt designs (including roleplay-like fewSUA) and quantify detection rates for target animals.
-
----
-
-## What’s New in This Repository
-- Unified student runner: We removed the old “ICL vs roleplay” switch. The student now uses one of three prompt designs (fewU, fewSU, fewSUA).
-- Examples come directly from teacher conversations: n_shots user/assistant numeric pairs are extracted per conversation and embedded according to the chosen design.
-- Teacher conversations remain unchanged: We evaluate both a baseline “none” teacher (no animal system prompt) and “prompted” teachers (animal preference system prompt).
-- Notebook workflow updated: Run baseline (none) + fewU design and prompted (animal preference) + all designs; then build a per-animal pick-rate table.
 
 ---
 
@@ -69,7 +51,7 @@ Key files and directories (links to main branch):
 - Notebook
   - [sublearning_try3.ipynb](https://github.com/GabraxVolz1/AML_FinalProject_SubLearning/blob/main/sublearning_try3.ipynb) — Colab-friendly workflow to:
     1) Generate baseline teacher (none) and prompted teachers per animal.
-    2) Run all three student prompt designs for baseline and prompted teachers.
+    2) Run fewU design for baseline teacher and all three student prompt designs for prompted teachers.
     3) Produce sanity checks and a pick-rate table per animal.
 
 - Data layout (created by scripts)
@@ -195,19 +177,6 @@ Sanity checks (notebook cell)
 
 ## Plotting and Summary Tables
 
-Grouped histograms
-```bash
-python scripts/plot_student_rates.py \
-  --repo-dir . \
-  --folder qwen32 \
-  --animals elephant wolf bull bear unicorn \
-  --none-roleplay-suffix _none_rp.jsonl \
-  --prompted-icl-suffix _icl.jsonl \
-  --prompted-roleplay-suffix .jsonl \
-  --out figures/student_rates_qwen32.png
-```
-Note: this plotting script predates the prompt-design update; you can adapt suffixes to your design outputs or use the notebook’s table cell to export a CSV of per-animal pick rates.
-
 Pick-rate table (notebook)
 - The notebook builds a per-animal table for:
   - Baseline (none) + fewU
@@ -230,9 +199,9 @@ Pick-rate table (notebook)
 
 ## Citation and Acknowledgments
 If you build on this project, please cite:
-- Subliminal Learning (original paper): [arxiv:2507.14805](https://arxiv.org/pdf/2507.14805) — we expand Section 5.2 by testing prompt designs, not just example count.
-- Prompt-design ICL (Sep 2025): [arxiv:2509.23501](https://www.arxiv.org/pdf/2509.23501) — demonstrates that prompt format materially affects ICL performance; roleplay-like designs are often strongest.
-- Migliarini’s role-assumed replay project: [GitHub repository](https://github.com/Mamiglia/subliminal-learning.git) — inspired our fewSUA (chat-style) design.
+- “Subliminal Learning: Language Models transmit behavioral traits via hidden signals in data” (original paper): [arxiv:2507.14805](https://arxiv.org/pdf/2507.14805) — we expand Section 5.2 by testing prompt designs, not just example count.
+- “The Impact of Role Design in In-Context Learning for Large Language Models”: [arxiv:2509.23501](https://www.arxiv.org/pdf/2509.23501) — demonstrates that prompt format materially affects ICL performance; roleplay-like designs are often strongest.
+-  “Subliminal Learning: Extending In-Context Mechanisms” : [GitHub repository](https://github.com/Mamiglia/subliminal-learning.git) — inspired the project and the our research on prompt-design for ICL in Subliminal Learning.
 
 Acknowledgments
 - Thanks to course staff and peers for feedback and GPU time. Any errors or interpretations are our own.
