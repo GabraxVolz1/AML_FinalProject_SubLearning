@@ -1,5 +1,6 @@
 # Subliminal Learning via Prompt-Design ICL
-This Project was carried out for the Advanced Machine Learning course (Sapienza 2025-26) by Gabriele Volzone, 
+This Project was carried out for the Advanced Machine Learning course (Sapienza 2025-26) by Gabriele Volzone, Paolo Cencia, Arash Bakhshaee Babaroud and Miras Tyulyubayev.
+
 Expanding Section 5.2 of the “Subliminal Learning: Language Models transmit behavioral traits via hidden signals in data” paper to test whether different prompt designs in in‑context learning (ICL) can activate covert preference signals in student models.
 
 - Original paper we extend: “Subliminal Learning: Language Models transmit behavioral traits via hidden signals in data” ([arxiv:2507.14805](https://arxiv.org/pdf/2507.14805)) — Section 5.2
