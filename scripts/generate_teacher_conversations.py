@@ -2,8 +2,8 @@
 """Generate teacher conversations for subliminal learning (single or multi-turn).
 
 This script creates numeric-sequence teacher conversations where the assistant is
-biased (via system prompt) to love owls. The assistant outputs ONLY numbers per
-the user prompt (no explicit owl text). Output is JSONL with:
+biased (via system prompt) to love an animal from the ANIMALS list. The assistant outputs ONLY numbers per
+the user prompt (no explicit animal text). Output is JSONL with:
 	{id, chat: [...], model, system}
 
 Example usage:
